@@ -14,12 +14,14 @@ class StandupBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        @self.tree.command(name="standup", description="Submit standup notes")
-        @app_commands.describe(text="Your notes")
+        @self.tree.command(name="standup", description="Submit an update")
+        @app_commands.describe(text="Your update")
         async def standup(interaction: discord.Interaction, text: str):
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
             create_notion_entry(interaction.user, text)
-            await interaction.followup.send("Standup saved to Notion!", ephemeral=True)
+            await interaction.followup.send(
+                f"{interaction.user.mention} posted an update: {text}"
+            )
 
         await self.tree.sync()
 
