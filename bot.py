@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import discord
 from discord import app_commands
 from discord.ui import TextInput, Modal
@@ -8,9 +10,16 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
+try:
+    with open("forum_channels.json", "r") as f:
+        FORUM_CHANNEL_IDS = json.load(f)
+except Exception:
+    FORUM_CHANNEL_IDS = []
+
 class StandupBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
+        intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
@@ -21,6 +30,24 @@ class StandupBot(discord.Client):
             await interaction.response.send_modal(modal)
 
         await self.tree.sync()
+
+    async def on_thread_create(self, thread: discord.Thread) -> None:
+        if (
+            isinstance(thread.parent, discord.ForumChannel)
+            and thread.parent.id in FORUM_CHANNEL_IDS
+        ):
+            try:
+                message = await thread.fetch_message(thread.id)
+            except Exception:
+                return
+            first_url_match = re.search(r"https?://\S+", message.content)
+            first_url = first_url_match.group(0) if first_url_match else ""
+            create_forum_notion_entry(
+                thread.name,
+                message.author,
+                first_url,
+                message.content,
+            )
 
 class StandupModal(Modal):
     def __init__(self, user: discord.abc.User):
@@ -105,6 +132,32 @@ def create_notion_entry(
             "Availability": {
                 "rich_text": [{"text": {"content": availability}}]
             },
+        },
+    }
+    requests.post(url, headers=headers, json=data)
+
+def create_forum_notion_entry(
+    post_name: str,
+    author: discord.abc.User,
+    url_link: str,
+    notes: str,
+) -> None:
+    url = "https://api.notion.com/v1/pages"
+    headers = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+    data = {
+        "parent": {"database_id": NOTION_DATABASE_ID},
+        "properties": {
+            "Name": {
+                "title": [
+                    {"text": {"content": f"{post_name} by {author.name}"}}
+                ]
+            },
+            "URL": {"url": url_link if url_link else None},
+            "Notes": {"rich_text": [{"text": {"content": notes}}]},
         },
     }
     requests.post(url, headers=headers, json=data)
